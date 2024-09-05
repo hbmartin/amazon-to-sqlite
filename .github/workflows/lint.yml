@@ -1,0 +1,36 @@
+name: Lint
+on: push
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+    steps:
+    - uses: actions/checkout@v4
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      id: cpython3
+      with:
+        python-version: ${{ matrix.python-version }}
+        cache: pip
+        cache-dependency-path: requirements.txt
+        allow-prereleases: true
+    - run: echo '${{ steps.cpython3.outputs.python-version }}'
+    - run: pip install -e '.[lint]'
+    - run: ruff check overcast_to_sqlite
+    - name: Run mypy (pytype on 3.11)
+      run: |
+        if [[ '${{ steps.cpython3.outputs.python-version }}' == *"3.11"* ]]; then
+          pip install pytype
+          pytype -j auto overcast_to_sqlite
+        else
+          mypy overcast_to_sqlite
+        fi
+    - uses: psf/black@stable
+      with:
+        options: "--check --verbose"
+    - run: pyroma . --min=10
+    - run: |
+        python -m overcast_to_sqlite.cli |& grep -q 'Usage:'
