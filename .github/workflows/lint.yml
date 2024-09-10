@@ -19,18 +19,18 @@ jobs:
         allow-prereleases: true
     - run: echo '${{ steps.cpython3.outputs.python-version }}'
     - run: pip install -e '.[lint]'
-    - run: ruff check overcast_to_sqlite
+    - run: ruff check amazon_to_sqlite
     - name: Run mypy (pytype on 3.11)
       run: |
         if [[ '${{ steps.cpython3.outputs.python-version }}' == *"3.11"* ]]; then
           pip install pytype
-          pytype -j auto overcast_to_sqlite
+          pytype -j auto amazon_to_sqlite
         else
-          mypy overcast_to_sqlite
+          mypy amazon_to_sqlite
         fi
     - uses: psf/black@stable
       with:
         options: "--check --verbose"
     - run: pyroma . --min=10
     - run: |
-        python -m overcast_to_sqlite.cli |& grep -q 'Usage:'
+        python -m amazon_to_sqlite.cli |& grep -q 'Usage:'
