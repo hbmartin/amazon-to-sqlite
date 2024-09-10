@@ -33,7 +33,7 @@ _field_types = {
 
 fields = [
     "".join(c if c.isalnum() or c == "_" else "_" for c in field.replace(" ", "_"))
-    for field in _field_types.keys()
+    for field in _field_types
 ]
 
 table_name = "amazon_orders"
@@ -58,11 +58,11 @@ def create_table(conn: Connection) -> None:
 
 
 def noneify(data: list[str]) -> list[str | None]:
-    return [d if d != "Not Applicable" and d != "Not Available" else None for d in data]
+    return [d if d not in ("Not Applicable", "Not Available") else None for d in data]
 
 
 def insert(conn: Connection, rows: list[list[str]]) -> None:
     placeholders = ", ".join(["?" for _ in fields])
-    insert_query = f'INSERT INTO "{table_name}" VALUES ({placeholders})'
+    insert_query = f'INSERT INTO "{table_name}" VALUES ({placeholders})'  # noqa: S608
     conn.executemany(insert_query, [noneify(row) for row in rows])
     conn.commit()

@@ -3,24 +3,21 @@ requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
 
 [options]
-packages = ["overcast_to_sqlite", "overcast_to_sqlite.html"]
+packages = ["amazon_to_sqlite"]
 
 [tool.setuptools]
-packages = ["overcast_to_sqlite", "overcast_to_sqlite.html"]
-
-[tool.setuptools.package-data]
-"overcast_to_sqlite.html" = ["*.css", "*.html"]
+packages = ["amazon_to_sqlite"]
 
 [project]
-name = "overcast-to-sqlite"
-version = "0.7.0"
-description = "Save listening history and feed/episode info from Overcast to a SQLite database."
+name = "amazon-to-sqlite"
+version = "0.1.0"
+description = "Save order history from Amazon.com to a SQLite database."
 readme = "README.md"
 requires-python = ">=3.11"
 authors = [
     { name = "Harold Martin", email = "Harold.Martin@gmail.com" },
 ]
-keywords = ["datasette", "overcast", "sqlite", "podcasts", "podcast", "transcripts"]
+keywords = ["datasette", "amazon", "sqlite", "order"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Environment :: Console",
@@ -30,18 +27,19 @@ classifiers = [
     "License :: OSI Approved :: Apache Software License",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Typing :: Typed",
 ]
-dependencies = ["click", "podcast-chapter-tools", "python-dateutil", "requests", "sqlite-utils"]
+dependencies = ["requests", "beautifulsoup4"]
 
 [project.optional-dependencies]
-lint = ["pyroma", "mypy", "ruff", "types-python-dateutil", "types-requests", "pytest", "requests-mock"]
+lint = ["pyroma", "mypy", "ruff", "types-requests", "pytest"]
 
 [project.scripts]
-overcast-to-sqlite = "overcast_to_sqlite.cli:cli"
+amazon-to-sqlite = "amazon_to_sqlite.__main__:main"
 
 [project.urls]
-Homepage = "https://github.com/hbmartin/overcast-to-sqlite"
+Homepage = "https://github.com/hbmartin/amazon-to-sqlite"
 
 [tool.ruff]
 # Exclude a variety of commonly ignored directories.
@@ -53,12 +51,11 @@ indent-width = 4
 target-version = "py311"
 
 lint.select = ["ALL"]
-lint.ignore = ["D100", "D101", "D103", "D104", "D105", "D107", "D203", "D213", "ICN001", "S608", "S113", "S311", "S314", "T201"]
+lint.ignore = ["D100", "D101", "D103", "D104", "D105", "D107", "D203", "D213", "S113"]
 
 [tool.ruff.lint.per-file-ignores]
-"overcast_to_sqlite/cli.py" = ["FBT001"]
-"overcast_to_sqlite/more_itertools.py" = ["RET505", "EM101", "TRY003", "ANN202", "D415", "D400", "ANN001", "FBT002", "ANN201"]
-"overcast_to_sqlite/episode.py" = ["SIM102"]
+"amazon_to_sqlite/__main__.py" = ["T201"]
+"amazon_to_sqlite/check_book_formats.py" = ["T201"]
 
 [tool.ruff.format]
 # Same as Black.
