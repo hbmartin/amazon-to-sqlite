@@ -2,6 +2,7 @@ import requests
 from bs4 import BeautifulSoup
 import re
 
+
 def check_book_formats(asin):
     url = f"https://www.amazon.com/dp/{asin}"
     headers = {
@@ -11,23 +12,23 @@ def check_book_formats(asin):
     try:
         response = requests.get(url, headers=headers)
         response.raise_for_status()
-        soup = BeautifulSoup(response.content, 'html.parser')
+        soup = BeautifulSoup(response.content, "html.parser")
 
         # Extract book title
-        title_element = soup.select_one('#title') or soup.select_one('#productTitle')
+        title_element = soup.select_one("#title") or soup.select_one("#productTitle")
         title = title_element.text.strip() if title_element else "Title not found"
         print(f"Book Title: {title}")
 
         # Check for formats
         formats = {
-            'Hardcover': False,
-            'Paperback': False,
-            'Kindle': False,
-            'Audiobook': False
+            "Hardcover": False,
+            "Paperback": False,
+            "Kindle": False,
+            "Audiobook": False,
         }
 
         # Check main format
-        format_element = soup.select_one('#productSubtitle')
+        format_element = soup.select_one("#productSubtitle")
         if format_element:
             format_text = format_element.text.strip()
             for format in formats:
@@ -35,14 +36,18 @@ def check_book_formats(asin):
                     formats[format] = True
 
         # Check for Kindle format
-        kindle_element = soup.find('a', {'href': re.compile(r'/dp/\w+/ref=dp_ob_title_def')}) or soup.find('a', {'href': re.compile(r'/dp/\w+/ref=tmm_kin_swatch_0')})
-        if kindle_element and 'kindle' in kindle_element.text.lower():
-            formats['Kindle'] = True
+        kindle_element = soup.find(
+            "a", {"href": re.compile(r"/dp/\w+/ref=dp_ob_title_def")}
+        ) or soup.find("a", {"href": re.compile(r"/dp/\w+/ref=tmm_kin_swatch_0")})
+        if kindle_element and "kindle" in kindle_element.text.lower():
+            formats["Kindle"] = True
 
         # Check for Audiobook format
-        audiobook_element = soup.find('a', {'href': re.compile(r'/dp/\w+/ref=tmm_aud_swatch_0')})
-        if audiobook_element and 'audiobook' in audiobook_element.text.lower():
-            formats['Audiobook'] = True
+        audiobook_element = soup.find(
+            "a", {"href": re.compile(r"/dp/\w+/ref=tmm_aud_swatch_0")}
+        )
+        if audiobook_element and "audiobook" in audiobook_element.text.lower():
+            formats["Audiobook"] = True
 
         print("Available formats:")
         for format, available in formats.items():
@@ -53,6 +58,7 @@ def check_book_formats(asin):
     except Exception as e:
         print(f"An error occurred: {str(e)}")
 
+
 # Example usage
-asin = '1098168100'  # Replace with your book's ASIN
+asin = "1098168100"  # Replace with your book's ASIN
 check_book_formats(asin)
