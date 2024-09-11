@@ -33,7 +33,7 @@ classifiers = [
 dependencies = ["requests", "beautifulsoup4"]
 
 [project.optional-dependencies]
-lint = ["pyroma", "mypy", "ruff", "types-requests", "pytest"]
+lint = ["mypy", "pyroma", "pytest", "ruff", "types-beautifulsoup4", "types-requests"]
 
 [project.scripts]
 amazon-to-sqlite = "amazon_to_sqlite.__main__:main"

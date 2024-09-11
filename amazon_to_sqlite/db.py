@@ -66,3 +66,12 @@ def insert(conn: Connection, rows: list[list[str]]) -> None:
     insert_query = f'INSERT INTO "{table_name}" VALUES ({placeholders})'  # noqa: S608
     conn.executemany(insert_query, [noneify(row) for row in rows])
     conn.commit()
+
+
+def get_books(conn: Connection) -> list[dict[str, str]]:
+    cursor = conn.cursor()
+    cursor.execute(f"SELECT {', '.join(fields)} FROM {table_name} "
+                   "WHERE ASIN != '' AND LENGTH(ASIN) = LENGTH(CAST(ASIN AS INTEGER)) "
+                   "AND ASIN = CAST(ASIN AS INTEGER);")
+    rows = cursor.fetchall()
+    return [dict(zip(fields, row)) for row in rows]
