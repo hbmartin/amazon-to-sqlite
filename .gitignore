@@ -234,3 +234,6 @@ dmypy.json
 
 # Cython debug symbols
 cython_debug/
+
+# JetBrains project files
+.idea/

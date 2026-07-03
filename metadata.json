@@ -1,0 +1,36 @@
+{
+    "title": "Amazon order history",
+    "description": "Amazon.com order history imported with amazon-to-sqlite",
+    "databases": {
+        "amazon": {
+            "tables": {
+                "amazon_orders": {
+                    "sort_desc": "Order_Date",
+                    "facets": ["Order_Status", "Product_Condition", "Payment_Instrument_Type"]
+                }
+            },
+            "queries": {
+                "spend_by_year": {
+                    "sql": "SELECT strftime('%Y', Order_Date) AS year, ROUND(SUM(Total_Owed), 2) AS total_spent, COUNT(*) AS items FROM amazon_orders GROUP BY year ORDER BY year DESC",
+                    "title": "Total spend by year"
+                },
+                "spend_by_month": {
+                    "sql": "SELECT strftime('%Y-%m', Order_Date) AS month, ROUND(SUM(Total_Owed), 2) AS total_spent, COUNT(*) AS items FROM amazon_orders GROUP BY month ORDER BY month DESC",
+                    "title": "Total spend by month"
+                },
+                "top_products": {
+                    "sql": "SELECT Product_Name, ASIN, COUNT(*) AS times_ordered, ROUND(SUM(Total_Owed), 2) AS total_spent FROM amazon_orders GROUP BY ASIN, Product_Name ORDER BY total_spent DESC LIMIT 50",
+                    "title": "Top products by total spend"
+                },
+                "orders_by_status": {
+                    "sql": "SELECT Order_Status, COUNT(*) AS items, ROUND(SUM(Total_Owed), 2) AS total FROM amazon_orders GROUP BY Order_Status ORDER BY items DESC",
+                    "title": "Orders by status"
+                },
+                "search_products": {
+                    "sql": "SELECT * FROM amazon_orders WHERE rowid IN (SELECT rowid FROM amazon_orders_fts WHERE amazon_orders_fts MATCH :search) ORDER BY Order_Date DESC",
+                    "title": "Full-text search product names"
+                }
+            }
+        }
+    }
+}
