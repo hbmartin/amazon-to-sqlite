@@ -41,6 +41,24 @@ def test_create_table_removes_historical_duplicates(conn: sqlite3.Connection):
     assert count == 1
 
 
+def test_create_table_skips_deduplication_after_unique_index_exists(
+    conn: sqlite3.Connection,
+):
+    db.create_table(conn)
+    statements: list[str] = []
+
+    conn.set_trace_callback(statements.append)
+    try:
+        db.create_table(conn)
+    finally:
+        conn.set_trace_callback(None)
+
+    assert not any(
+        statement.lstrip().upper().startswith("DELETE FROM")
+        for statement in statements
+    )
+
+
 def test_create_table_adds_indexes_and_fts(conn: sqlite3.Connection):
     db.create_table(conn)
     indexes = {
@@ -92,6 +110,24 @@ def test_generic_helpers_sanitize_identifiers(conn: sqlite3.Connection):
         f'SELECT "{safe_column}" FROM "{safe_table}"',
     ).fetchone()[0]
     assert value == "kept"
+
+
+def test_create_generic_table_skips_deduplication_after_unique_index_exists(
+    conn: sqlite3.Connection,
+):
+    db.create_generic_table(conn, "generic", ["A", "B"])
+    statements: list[str] = []
+
+    conn.set_trace_callback(statements.append)
+    try:
+        db.create_generic_table(conn, "generic", ["A", "B"])
+    finally:
+        conn.set_trace_callback(None)
+
+    assert not any(
+        statement.lstrip().upper().startswith("DELETE FROM")
+        for statement in statements
+    )
 
 
 def test_fts_search(conn: sqlite3.Connection):

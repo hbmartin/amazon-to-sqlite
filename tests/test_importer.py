@@ -151,6 +151,11 @@ def test_empty_csv_raises(conn: sqlite3.Connection, tmp_path: Path):
     with pytest.raises(importer.EmptyCsvError):
         importer.import_file(conn, empty_header)
 
+    delimiter_header = tmp_path / "delimiter-header.csv"
+    delimiter_header.write_text(" ,\t,\n1,2,3\n", encoding="utf-8")
+    with pytest.raises(importer.EmptyCsvError):
+        importer.import_file(conn, delimiter_header)
+
 
 def test_expand_paths(tmp_path: Path, orders_csv: Path):
     nested = tmp_path / "nested"

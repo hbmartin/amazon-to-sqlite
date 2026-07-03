@@ -170,10 +170,14 @@ def peek_table_name(csv_path: Path) -> str:
     return table_name_for(csv_path)
 
 
+def _is_blank_header_row(headers: list[str]) -> bool:
+    return not headers or all(not header.strip() for header in headers)
+
+
 def _read_headers(csv_path: Path) -> list[str]:
     with csv_path.open(newline="", encoding="utf-8-sig") as csvfile:
         headers = next(csv.reader(csvfile, quotechar='"'), None)
-    if not headers:
+    if headers is None or _is_blank_header_row(headers):
         raise EmptyCsvError(csv_path)
     return headers
 
@@ -238,7 +242,7 @@ def import_order_history(
     with csv_path.open(newline="", encoding="utf-8-sig") as csvfile:
         reader = csv.reader(csvfile, quotechar='"')
         headers = next(reader, None)
-        if not headers:
+        if headers is None or _is_blank_header_row(headers):
             raise EmptyCsvError(csv_path)
         indexes, extras = validate_headers(headers)
         result.extra_columns = extras
@@ -276,7 +280,7 @@ def import_generic(
     with csv_path.open(newline="", encoding="utf-8-sig") as csvfile:
         reader = csv.reader(csvfile, quotechar='"')
         headers = next(reader, None)
-        if not headers:
+        if headers is None or _is_blank_header_row(headers):
             raise EmptyCsvError(csv_path)
         columns = _unique_columns(headers)
         db.create_generic_table(conn, table, columns)
