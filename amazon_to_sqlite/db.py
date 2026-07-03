@@ -84,15 +84,32 @@ def create_table_statement() -> str:
     return f"CREATE TABLE IF NOT EXISTS {TABLE_NAME} ({fields_str});"
 
 
+def _unique_index_name(table: str) -> str:
+    safe_table = _safe_identifier(table)
+    return f"idx_{safe_table}_unique"
+
+
+def _unique_index_exists(conn: Connection, table: str) -> bool:
+    index_name = _unique_index_name(table)
+    return (
+        conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='index' AND name=?",
+            (index_name,),
+        ).fetchone()
+        is not None
+    )
+
+
 def _unique_index_statement(table: str, columns: list[str]) -> str:
     safe_table = _safe_identifier(table)
+    index_name = _unique_index_name(safe_table)
     # NULLs compare as distinct in SQLite unique indexes, so index over
     # COALESCE(column, '') to make rows containing NULLs deduplicate too.
     exprs = ", ".join(
         f"COALESCE({_quoted_identifier(column)}, '')" for column in columns
     )
     return (
-        f'CREATE UNIQUE INDEX IF NOT EXISTS "idx_{safe_table}_unique" '
+        f"CREATE UNIQUE INDEX IF NOT EXISTS {_quoted_identifier(index_name)} "
         f"ON {_quoted_identifier(safe_table)} ({exprs});"
     )
 
@@ -150,7 +167,8 @@ def _create_fts(conn: Connection) -> None:
 
 def create_table(conn: Connection) -> None:
     conn.execute(create_table_statement())
-    _deduplicate_existing_rows(conn, TABLE_NAME, FIELDS)
+    if not _unique_index_exists(conn, TABLE_NAME):
+        _deduplicate_existing_rows(conn, TABLE_NAME, FIELDS)
     conn.execute(_unique_index_statement(TABLE_NAME, FIELDS))
     for field in INDEXED_FIELDS:
         conn.execute(
@@ -170,7 +188,8 @@ def create_generic_table(conn: Connection, table: str, columns: list[str]) -> No
     conn.execute(
         f"CREATE TABLE IF NOT EXISTS {_quoted_identifier(safe_table)} ({cols});",
     )
-    _deduplicate_existing_rows(conn, safe_table, safe_columns)
+    if not _unique_index_exists(conn, safe_table):
+        _deduplicate_existing_rows(conn, safe_table, safe_columns)
     conn.execute(_unique_index_statement(safe_table, safe_columns))
     conn.commit()
 
