@@ -92,9 +92,15 @@ def is_order_history(headers: list[str]) -> bool:
     return all(f in stripped for f in db.FIELD_TYPES)
 
 
-def normalize_date(value: str) -> str:
+def _looks_like_order_history_file(csv_path: Path) -> bool:
+    return csv_path.name.lower().startswith("retail.orderhistory")
+
+
+def normalize_date(value: str) -> str | None:
     """Normalize a date string to ISO 8601; return it unchanged if unparseable."""
     text = value.strip()
+    if not text:
+        return None
     iso_candidate = text[:-1] + "+00:00" if text.endswith("Z") else text
     try:
         return datetime.fromisoformat(iso_candidate).isoformat()
@@ -105,34 +111,41 @@ def normalize_date(value: str) -> str:
             return datetime.strptime(text, fmt).isoformat()  # noqa: DTZ007
         except ValueError:
             continue
-    return value
+    return text
 
 
-def parse_money(value: str) -> float | str:
+def parse_money(value: str) -> float | str | None:
     """Parse a currency amount ("$1,234.56", "USD 12.99") to a float.
 
     Amounts are stored as REAL (floats): convenient for SUM()/ROUND() in
     queries, at the cost of binary-float representation of cents.
-    Returns the original string if it cannot be parsed.
+    Returns None if empty, or the original string if it cannot be parsed.
     """
-    cleaned = _NON_NUMERIC.sub("", value)
+    text = value.strip()
+    if not text:
+        return None
+    cleaned = _NON_NUMERIC.sub("", text)
     if not cleaned:
         return value
+    if text.startswith("(") and text.endswith(")") and not cleaned.startswith("-"):
+        cleaned = f"-{cleaned}"
     try:
         return float(cleaned)
     except ValueError:
         return value
 
 
-def parse_int(value: str) -> int | str:
+def parse_int(value: str) -> int | str | None:
+    if not value.strip():
+        return None
     try:
         return int(float(value))
-    except ValueError:
+    except (OverflowError, ValueError):
         return value
 
 
-def _converters() -> list[Callable[[str], str | float | int]]:
-    converters: list[Callable[[str], str | float | int]] = []
+def _converters() -> list[Callable[[str], str | float | int | None]]:
+    converters: list[Callable[[str], str | float | int | None]] = []
     for original_name in db.FIELD_TYPES:
         if original_name in DATE_FIELDS:
             converters.append(normalize_date)
@@ -152,7 +165,7 @@ def table_name_for(path: Path) -> str:
 def peek_table_name(csv_path: Path) -> str:
     """Determine the destination table without importing anything."""
     headers = _read_headers(csv_path)
-    if is_order_history(headers):
+    if is_order_history(headers) or _looks_like_order_history_file(csv_path):
         return db.TABLE_NAME
     return table_name_for(csv_path)
 
@@ -160,7 +173,7 @@ def peek_table_name(csv_path: Path) -> str:
 def _read_headers(csv_path: Path) -> list[str]:
     with csv_path.open(newline="", encoding="utf-8-sig") as csvfile:
         headers = next(csv.reader(csvfile, quotechar='"'), None)
-    if headers is None:
+    if not headers:
         raise EmptyCsvError(csv_path)
     return headers
 
@@ -170,7 +183,13 @@ def expand_paths(paths: Iterable[Path]) -> list[Path]:
     expanded: list[Path] = []
     for path in paths:
         if path.is_dir():
-            expanded.extend(sorted(path.rglob("*.csv")))
+            expanded.extend(
+                sorted(
+                    candidate
+                    for candidate in path.rglob("*")
+                    if candidate.is_file() and candidate.suffix.lower() == ".csv"
+                ),
+            )
         else:
             expanded.append(path)
     return expanded
@@ -193,7 +212,7 @@ def _chunks(
 def _normalize_order_row(
     row: list[str],
     indexes: list[int],
-    converters: list[Callable[[str], str | float | int]],
+    converters: list[Callable[[str], str | float | int | None]],
     header_count: int,
 ) -> list[str | float | int | None]:
     padded = row + [""] * (header_count - len(row))
@@ -219,7 +238,7 @@ def import_order_history(
     with csv_path.open(newline="", encoding="utf-8-sig") as csvfile:
         reader = csv.reader(csvfile, quotechar='"')
         headers = next(reader, None)
-        if headers is None:
+        if not headers:
             raise EmptyCsvError(csv_path)
         indexes, extras = validate_headers(headers)
         result.extra_columns = extras
@@ -257,7 +276,7 @@ def import_generic(
     with csv_path.open(newline="", encoding="utf-8-sig") as csvfile:
         reader = csv.reader(csvfile, quotechar='"')
         headers = next(reader, None)
-        if headers is None:
+        if not headers:
             raise EmptyCsvError(csv_path)
         columns = _unique_columns(headers)
         db.create_generic_table(conn, table, columns)
@@ -282,11 +301,16 @@ def import_generic(
 
 def _unique_columns(headers: list[str]) -> list[str]:
     columns: list[str] = []
+    lower_columns: set[str] = set()
     for position, header in enumerate(headers):
-        name = db.sanitize_name(header.strip()) if header.strip() else f"col_{position}"
-        while name in columns:
-            name += "_"
+        base = db.sanitize_name(header.strip()) if header.strip() else f"col_{position}"
+        name = base
+        suffix = 2
+        while name.lower() in lower_columns:
+            name = f"{base}_{suffix}"
+            suffix += 1
         columns.append(name)
+        lower_columns.add(name.lower())
     return columns
 
 
@@ -299,7 +323,7 @@ def import_file(
 ) -> ImportResult:
     """Import a CSV, routing order history and other exports appropriately."""
     headers = _read_headers(csv_path)
-    if is_order_history(headers):
+    if is_order_history(headers) or _looks_like_order_history_file(csv_path):
         return import_order_history(
             conn,
             csv_path,

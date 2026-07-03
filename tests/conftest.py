@@ -40,6 +40,11 @@ def make_row(**overrides: str) -> list[str]:
         "Gift Recipient Contact Details": "Not Available",
         "Item Serial Number": "Not Applicable",
     }
+    unknown = set(overrides) - set(HEADERS)
+    if unknown:
+        raise ValueError(
+            "Unknown order-history field override(s): " + ", ".join(sorted(unknown)),
+        )
     values.update(overrides)
     return [values[h] for h in HEADERS]
 

@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import sqlite3
 import sys
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -82,6 +84,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=DEFAULT_DB,
         help=f"SQLite database file (default: {DEFAULT_DB})",
     )
+    formats_parser.add_argument(
+        "--delay",
+        type=float,
+        default=1.0,
+        help="Seconds to wait between Amazon requests (default: 1.0)",
+    )
     return parser
 
 
@@ -111,7 +119,13 @@ def _import_command(args: argparse.Namespace) -> int:
                     exit_code,
                     _import_one(conn, csv_path, args, dropped),
                 )
-            except (EmptyCsvError, HeaderMismatchError, OSError) as exc:
+            except (
+                csv.Error,
+                EmptyCsvError,
+                HeaderMismatchError,
+                OSError,
+                sqlite3.Error,
+            ) as exc:
                 print(f"{csv_path}: {exc}", file=sys.stderr)
                 exit_code = 1
     finally:
@@ -132,11 +146,12 @@ def _import_one(
 
     bar = tqdm(desc=csv_path.name, unit=" rows") if not args.quiet else None
     try:
-        result = import_file(
-            conn,
-            csv_path,
-            progress=bar.update if bar is not None else None,
-        )
+        with conn:
+            result = import_file(
+                conn,
+                csv_path,
+                progress=bar.update if bar is not None else None,
+            )
     finally:
         if bar is not None:
             bar.close()
@@ -155,6 +170,10 @@ def _import_one(
 
 
 def _check_formats_command(args: argparse.Namespace) -> int:
+    if args.delay < 0:
+        print("--delay must be non-negative", file=sys.stderr)
+        return 1
+
     if args.asins:
         books = [{"asin": asin, "title": ""} for asin in args.asins]
     else:
@@ -168,18 +187,23 @@ def _check_formats_command(args: argparse.Namespace) -> int:
         conn = _connect(args.db)
         try:
             books = db.get_books(conn)
+        except sqlite3.Error as exc:
+            print(f"{args.db}: {exc}", file=sys.stderr)
+            return 1
         finally:
             conn.close()
         if not books:
             print("No print books (ISBN-10 ASINs) found in the database.")
             return 0
 
-    for book in books:
+    for position, book in enumerate(books):
         if book["title"]:
             print(f"\n{book['title']} ({book['asin']})")
         else:
             print(f"\n{book['asin']}")
         check_book_formats(book["asin"])
+        if args.delay > 0 and position < len(books) - 1:
+            time.sleep(args.delay)
     return 0
 
 

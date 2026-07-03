@@ -30,6 +30,11 @@ def test_validate_headers_extra_columns():
     assert extras == ["New Amazon Column"]
 
 
+def test_make_row_rejects_unknown_override():
+    with pytest.raises(ValueError, match="Unknown order-history field"):
+        make_row(**{"Order Id": "typo"})
+
+
 def test_normalize_date():
     assert importer.normalize_date("2023-08-12T20:23:53Z") == (
         "2023-08-12T20:23:53+00:00"
@@ -37,19 +42,28 @@ def test_normalize_date():
     assert importer.normalize_date("08/12/2023") == "2023-08-12T00:00:00"
     assert importer.normalize_date("8/2/2023 14:30:00") == "2023-08-02T14:30:00"
     assert importer.normalize_date("not a date") == "not a date"
+    assert importer.normalize_date("  not a date  ") == "not a date"
+    assert importer.normalize_date("") is None
+    assert importer.normalize_date("   ") is None
 
 
 def test_parse_money():
     assert importer.parse_money("$1,234.56") == 1234.56
     assert importer.parse_money("USD 12.99") == 12.99
     assert importer.parse_money("-3.50") == -3.50
+    assert importer.parse_money("($1.99)") == -1.99
     assert importer.parse_money("free") == "free"
+    assert importer.parse_money("") is None
+    assert importer.parse_money("   ") is None
 
 
 def test_parse_int():
     assert importer.parse_int("2") == 2
     assert importer.parse_int("2.0") == 2
     assert importer.parse_int("many") == "many"
+    assert importer.parse_int("Infinity") == "Infinity"
+    assert importer.parse_int("") is None
+    assert importer.parse_int("   ") is None
 
 
 def test_import_order_history(conn: sqlite3.Connection, orders_csv: Path):
@@ -105,6 +119,20 @@ def test_import_generic_csv(conn: sqlite3.Connection, tmp_path: Path):
     assert again.rows_inserted == 0
 
 
+def test_import_generic_case_insensitive_duplicate_headers(
+    conn: sqlite3.Connection,
+    tmp_path: Path,
+):
+    csv_path = tmp_path / "Case Headers.csv"
+    csv_path.write_text("Title,title\nSome Ebook,D01-123\n", encoding="utf-8")
+    result = importer.import_file(conn, csv_path)
+    assert result.rows_inserted == 1
+    columns = [
+        row[1] for row in conn.execute(f"PRAGMA table_info({result.table})").fetchall()
+    ]
+    assert columns == ["Title", "title_2"]
+
+
 def test_short_rows_are_padded(conn: sqlite3.Connection, tmp_path: Path):
     row = make_row()[:-3]  # drop trailing columns
     csv_path = write_csv(tmp_path / "short.csv", [row])
@@ -118,13 +146,20 @@ def test_empty_csv_raises(conn: sqlite3.Connection, tmp_path: Path):
     with pytest.raises(importer.EmptyCsvError):
         importer.import_file(conn, empty)
 
+    empty_header = tmp_path / "empty-header.csv"
+    empty_header.write_text("\r", encoding="utf-8")
+    with pytest.raises(importer.EmptyCsvError):
+        importer.import_file(conn, empty_header)
+
 
 def test_expand_paths(tmp_path: Path, orders_csv: Path):
     nested = tmp_path / "nested"
     nested.mkdir()
+    upper = nested / "A.CSV"
+    upper.write_text("A,B\n3,4\n", encoding="utf-8")
     other = nested / "b.csv"
     other.write_text("A,B\n1,2\n", encoding="utf-8")
-    assert importer.expand_paths([tmp_path]) == [orders_csv, other]
+    assert importer.expand_paths([tmp_path]) == [orders_csv, upper, other]
     assert importer.expand_paths([orders_csv]) == [orders_csv]
 
 
