@@ -15,6 +15,7 @@ def test_sanitize_name():
     )
     assert db.sanitize_name("Order ID") == "Order_ID"
     assert db.sanitize_name("123 Fun") == "t_123_Fun"
+    assert db.sanitize_name("Café") == "Caf"
 
 
 def test_create_table_is_idempotent(conn: sqlite3.Connection):
@@ -25,6 +26,19 @@ def test_create_table_is_idempotent(conn: sqlite3.Connection):
         for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
     }
     assert db.TABLE_NAME in tables
+
+
+def test_create_table_removes_historical_duplicates(conn: sqlite3.Connection):
+    conn.execute(db.create_table_statement())
+    row = ["x"] * len(db.FIELDS)
+    placeholders = ", ".join(["?"] * len(db.FIELDS))
+    conn.executemany(
+        f"INSERT INTO {db.TABLE_NAME} VALUES ({placeholders})",
+        [row, row],
+    )
+    db.create_table(conn)
+    count = conn.execute(f"SELECT COUNT(*) FROM {db.TABLE_NAME}").fetchone()[0]
+    assert count == 1
 
 
 def test_create_table_adds_indexes_and_fts(conn: sqlite3.Connection):
@@ -67,6 +81,19 @@ def test_insert_deduplicates_rows_with_nulls(conn: sqlite3.Connection):
     assert db.insert(conn, [row]) == 0
 
 
+def test_generic_helpers_sanitize_identifiers(conn: sqlite3.Connection):
+    raw_table = 'unsafe"; DROP TABLE amazon_orders; --'
+    raw_column = 'value"; DROP TABLE amazon_orders; --'
+    safe_table = db.sanitize_name(raw_table)
+    safe_column = db.sanitize_name(raw_column)
+    db.create_generic_table(conn, raw_table, [raw_column])
+    assert db.insert_rows(conn, raw_table, [["kept"]], 1) == 1
+    value = conn.execute(
+        f'SELECT "{safe_column}" FROM "{safe_table}"',
+    ).fetchone()[0]
+    assert value == "kept"
+
+
 def test_fts_search(conn: sqlite3.Connection):
     db.create_table(conn)
     row = ["x"] * len(db.FIELDS)
@@ -93,10 +120,12 @@ def test_get_books(conn: sqlite3.Connection):
     book_row = ["x"] * len(db.FIELDS)
     book_row[db.FIELDS.index("ASIN")] = "0306406152"
     book_row[db.FIELDS.index("Product_Name")] = "A Book"
+    book_row_updated_title = list(book_row)
+    book_row_updated_title[db.FIELDS.index("Product_Name")] = "Z Book"
     gadget_row = ["y"] * len(db.FIELDS)
     gadget_row[db.FIELDS.index("ASIN")] = "B08N5WRWNW"
-    db.insert(conn, [book_row, gadget_row])
-    assert db.get_books(conn) == [{"asin": "0306406152", "title": "A Book"}]
+    db.insert(conn, [book_row, book_row_updated_title, gadget_row])
+    assert db.get_books(conn) == [{"asin": "0306406152", "title": "Z Book"}]
 
 
 def test_drop_table(conn: sqlite3.Connection):

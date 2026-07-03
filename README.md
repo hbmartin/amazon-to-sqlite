@@ -24,7 +24,7 @@ pip install amazon-to-sqlite
 ## Usage
 
 Import one or more CSV files — or point it at the unzipped export directory
-and it will find every CSV in there:
+and it will find every `.csv`/`.CSV` file in there:
 
 ```bash
 amazon-to-sqlite import Retail.OrderHistory.1.csv
@@ -68,8 +68,9 @@ and rate-limits automated requests.
 - `Not Applicable` / `Not Available` values are stored as `NULL`.
 - Column headers are matched **by name**, so Amazon reordering or adding
   columns won't corrupt an import; a missing expected column fails loudly.
-- Indexes are created on `Order_Date`, `ASIN` and `Order_Status`, plus a
-  full-text search index on `Product_Name` (`amazon_orders_fts`).
+- Indexes are created on `Order_Date`, `ASIN` and `Order_Status`. When the
+  local SQLite build includes FTS5, a full-text search index is also created on
+  `Product_Name` (`amazon_orders_fts`).
 
 ## Exploring with Datasette
 
@@ -79,8 +80,8 @@ datasette amazon.db -m metadata.json
 ```
 
 The bundled [`metadata.json`](metadata.json) includes canned queries such as
-spend by year, spend by month, top products, and orders by status. Full-text
-search product names with:
+spend by year, spend by month, top products, and orders by status. When FTS5 is
+available, full-text search product names with:
 
 ```sql
 SELECT * FROM amazon_orders

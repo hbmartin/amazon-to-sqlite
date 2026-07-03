@@ -43,11 +43,14 @@ MISSING_VALUES = ("Not Applicable", "Not Available")
 
 ISBN10_LENGTH = 10
 
+_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
 
 def sanitize_name(name: str) -> str:
     """Turn an arbitrary string into a safe SQLite identifier."""
     safe = "".join(
-        c if c.isalnum() or c == "_" else "_" for c in name.replace(" ", "_")
+        c if c.isascii() and (c.isalnum() or c == "_") else "_"
+        for c in name.replace(" ", "_")
     )
     safe = re.sub(r"_+", "_", safe).strip("_")
     if not safe or safe[0].isdigit():
@@ -60,6 +63,18 @@ FIELDS = [sanitize_name(field) for field in FIELD_TYPES]
 INDEXED_FIELDS = ("Order_Date", "ASIN", "Order_Status")
 
 
+def _safe_identifier(name: str) -> str:
+    safe = sanitize_name(name)
+    if not _IDENTIFIER_RE.fullmatch(safe):
+        msg = "Unsafe SQLite identifier"
+        raise ValueError(msg)
+    return safe
+
+
+def _quoted_identifier(name: str) -> str:
+    return f'"{_safe_identifier(name)}"'
+
+
 def create_table_statement() -> str:
     typed_fields = [
         f'"{sanitize_name(field)}" {data_type}'
@@ -70,13 +85,35 @@ def create_table_statement() -> str:
 
 
 def _unique_index_statement(table: str, columns: list[str]) -> str:
+    safe_table = _safe_identifier(table)
     # NULLs compare as distinct in SQLite unique indexes, so index over
     # COALESCE(column, '') to make rows containing NULLs deduplicate too.
-    exprs = ", ".join(f"COALESCE(\"{column}\", '')" for column in columns)
-    return (
-        f'CREATE UNIQUE INDEX IF NOT EXISTS "idx_{table}_unique" '
-        f'ON "{table}" ({exprs});'
+    exprs = ", ".join(
+        f"COALESCE({_quoted_identifier(column)}, '')" for column in columns
     )
+    return (
+        f'CREATE UNIQUE INDEX IF NOT EXISTS "idx_{safe_table}_unique" '
+        f"ON {_quoted_identifier(safe_table)} ({exprs});"
+    )
+
+
+def _deduplicate_existing_rows(
+    conn: Connection,
+    table: str,
+    columns: Sequence[str],
+) -> None:
+    safe_table = _safe_identifier(table)
+    group_exprs = ", ".join(
+        f"COALESCE({_quoted_identifier(column)}, '')" for column in columns
+    )
+    delete_query = (
+        f"DELETE FROM {_quoted_identifier(safe_table)} "  # noqa: S608
+        f"WHERE rowid NOT IN ("
+        f"SELECT MIN(rowid) FROM {_quoted_identifier(safe_table)} "
+        f"GROUP BY {group_exprs}"
+        ");"
+    )
+    conn.execute(delete_query)
 
 
 def _create_fts(conn: Connection) -> None:
@@ -113,6 +150,7 @@ def _create_fts(conn: Connection) -> None:
 
 def create_table(conn: Connection) -> None:
     conn.execute(create_table_statement())
+    _deduplicate_existing_rows(conn, TABLE_NAME, FIELDS)
     conn.execute(_unique_index_statement(TABLE_NAME, FIELDS))
     for field in INDEXED_FIELDS:
         conn.execute(
@@ -124,16 +162,24 @@ def create_table(conn: Connection) -> None:
 
 
 def create_generic_table(conn: Connection, table: str, columns: list[str]) -> None:
-    cols = ",\n    ".join(f'"{column}" TEXT' for column in columns)
-    conn.execute(f'CREATE TABLE IF NOT EXISTS "{table}" ({cols});')
-    conn.execute(_unique_index_statement(table, columns))
+    safe_table = _safe_identifier(table)
+    safe_columns = [_safe_identifier(column) for column in columns]
+    cols = ",\n    ".join(
+        f"{_quoted_identifier(column)} TEXT" for column in safe_columns
+    )
+    conn.execute(
+        f"CREATE TABLE IF NOT EXISTS {_quoted_identifier(safe_table)} ({cols});",
+    )
+    _deduplicate_existing_rows(conn, safe_table, safe_columns)
+    conn.execute(_unique_index_statement(safe_table, safe_columns))
     conn.commit()
 
 
 def drop_table(conn: Connection, table: str) -> None:
-    conn.execute(f'DROP TABLE IF EXISTS "{table}";')
-    if table == TABLE_NAME:
-        conn.execute(f'DROP TABLE IF EXISTS "{FTS_TABLE_NAME}";')
+    safe_table = _safe_identifier(table)
+    conn.execute(f"DROP TABLE IF EXISTS {_quoted_identifier(safe_table)};")
+    if safe_table == TABLE_NAME:
+        conn.execute(f"DROP TABLE IF EXISTS {_quoted_identifier(FTS_TABLE_NAME)};")
     conn.commit()
 
 
@@ -149,7 +195,10 @@ def insert_rows(
 ) -> int:
     """Insert rows with INSERT OR IGNORE and return how many were new."""
     placeholders = ", ".join(["?"] * column_count)
-    insert_query = f'INSERT OR IGNORE INTO "{table}" VALUES ({placeholders})'  # noqa: S608
+    insert_query = (
+        f"INSERT OR IGNORE INTO {_quoted_identifier(table)} "  # noqa: S608
+        f"VALUES ({placeholders})"
+    )
     cursor = conn.executemany(insert_query, rows)
     # rowcount counts only the statement's direct changes, unlike
     # Connection.total_changes which also counts FTS trigger writes.
@@ -183,8 +232,11 @@ def is_isbn10(value: str) -> bool:
 def get_books(conn: Connection) -> list[dict[str, str]]:
     """Return distinct ISBN-10 ASINs (print books) with their product names."""
     cursor = conn.execute(
-        f'SELECT DISTINCT "ASIN", "Product_Name" FROM "{TABLE_NAME}" '  # noqa: S608
-        'WHERE "ASIN" IS NOT NULL AND "ASIN" != \'\';',
+        f"SELECT \"ASIN\", COALESCE(MAX(NULLIF(\"Product_Name\", '')), '') "  # noqa: S608
+        f"FROM {_quoted_identifier(TABLE_NAME)} "
+        'WHERE "ASIN" IS NOT NULL AND "ASIN" != \'\' '
+        'GROUP BY "ASIN" '
+        'ORDER BY "ASIN";',
     )
     return [
         {"asin": asin, "title": title or ""}
