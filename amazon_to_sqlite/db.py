@@ -93,7 +93,8 @@ def _unique_index_exists(conn: Connection, table: str) -> bool:
     index_name = _unique_index_name(table)
     return (
         conn.execute(
-            "SELECT 1 FROM sqlite_master WHERE type='index' AND name=?",
+            "SELECT 1 FROM sqlite_master "
+            "WHERE type='index' AND name=? COLLATE NOCASE",
             (index_name,),
         ).fetchone()
         is not None
@@ -102,7 +103,7 @@ def _unique_index_exists(conn: Connection, table: str) -> bool:
 
 def _unique_index_statement(table: str, columns: list[str]) -> str:
     safe_table = _safe_identifier(table)
-    index_name = _unique_index_name(safe_table)
+    index_name = _unique_index_name(table)
     # NULLs compare as distinct in SQLite unique indexes, so index over
     # COALESCE(column, '') to make rows containing NULLs deduplicate too.
     exprs = ", ".join(
