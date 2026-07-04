@@ -130,6 +130,24 @@ def test_create_generic_table_skips_deduplication_after_unique_index_exists(
     )
 
 
+def test_create_generic_table_finds_unique_index_with_different_case(
+    conn: sqlite3.Connection,
+):
+    db.create_generic_table(conn, "MixedCase", ["A", "B"])
+    statements: list[str] = []
+
+    conn.set_trace_callback(statements.append)
+    try:
+        db.create_generic_table(conn, "mixedcase", ["A", "B"])
+    finally:
+        conn.set_trace_callback(None)
+
+    assert not any(
+        statement.lstrip().upper().startswith("DELETE FROM")
+        for statement in statements
+    )
+
+
 def test_fts_search(conn: sqlite3.Connection):
     db.create_table(conn)
     row = ["x"] * len(db.FIELDS)
